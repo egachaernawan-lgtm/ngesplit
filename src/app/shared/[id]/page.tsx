@@ -7,11 +7,12 @@ import type { PersonResult } from "@/types/bill";
 export const revalidate = 3600;
 
 interface Props {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
 export default async function SharedPage({ params }: Props) {
-  const bill = await loadBill(params.id);
+  const { id } = await params;
+  const bill = await loadBill(id);
   if (!bill) notFound();
 
   const results = calculateResults(bill);
