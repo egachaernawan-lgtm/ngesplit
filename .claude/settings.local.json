@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx create-next-app@latest . --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --no-turbopack --name ngesplit)",
+      "Bash(npm install *)",
+      "Bash(npx next *)",
+      "Bash(node -e \"const p = require\\('./node_modules/react/package.json'\\); console.log\\('React:', p.version\\)\")",
+      "Bash(node -e \"const p = require\\('./node_modules/next/package.json'\\); console.log\\('Next:', p.version\\)\")",
+      "Bash(npx tsc *)",
+      "Bash(git init *)",
+      "Bash(git branch *)",
+      "Bash(git remote *)",
+      "Bash(git add *)"
+    ]
+  }
+}
