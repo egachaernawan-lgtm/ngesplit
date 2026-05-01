@@ -48,9 +48,14 @@ export default function AssignPage() {
 
   const handleNext = async () => {
     setSaving(true);
-    await save();
-    setSaving(false);
-    router.push("/result");
+    try {
+      await save();
+    } catch (e) {
+      console.error("Failed to save bill:", e);
+    } finally {
+      setSaving(false);
+      router.push("/result");
+    }
   };
 
   const activeMember = bill.members.find((m) => m.id === activeTab);
