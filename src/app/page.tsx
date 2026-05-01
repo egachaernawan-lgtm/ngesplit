@@ -22,6 +22,7 @@ export default function HomePage() {
   const [isIOS, setIsIOS] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
   const [showIOSHint, setShowIOSHint] = useState(false);
+  const [showAndroidHint, setShowAndroidHint] = useState(false);
 
   useEffect(() => {
     const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
@@ -46,10 +47,15 @@ export default function HomePage() {
       setTimeout(() => setShowIOSHint(false), 4000);
       return;
     }
-    if (!installPrompt) return;
-    await installPrompt.prompt();
-    const { outcome } = await installPrompt.userChoice;
-    if (outcome === "accepted") setIsInstalled(true);
+    if (installPrompt) {
+      await installPrompt.prompt();
+      const { outcome } = await installPrompt.userChoice;
+      if (outcome === "accepted") setIsInstalled(true);
+      return;
+    }
+    // Android but prompt not available yet — show manual hint
+    setShowAndroidHint(true);
+    setTimeout(() => setShowAndroidHint(false), 4000);
   };
 
   const processImage = useCallback(async (file: File) => {
@@ -87,7 +93,7 @@ export default function HomePage() {
     router.push("/review");
   };
 
-  const showInstallButton = !isInstalled && (installPrompt !== null || isIOS);
+  const showInstallButton = !isInstalled;
 
   return (
     <div className="flex flex-col min-h-screen px-4 pb-8">
@@ -181,10 +187,15 @@ export default function HomePage() {
             </svg>
           </button>
 
-          {/* iOS hint toast */}
+          {/* Hint toasts */}
           {showIOSHint && (
-            <div className="flex items-center gap-2 bg-[#1A1A1A] border border-[#2A2A2A] rounded-[12px] px-4 py-3 text-sm text-[#F5F5F5] max-w-xs text-center">
+            <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-[12px] px-4 py-3 text-sm text-[#F5F5F5] max-w-xs text-center">
               Tap the <strong>Share</strong> button then <strong>"Add to Home Screen"</strong>
+            </div>
+          )}
+          {showAndroidHint && (
+            <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-[12px] px-4 py-3 text-sm text-[#F5F5F5] max-w-xs text-center">
+              Tap <strong>⋮ Menu</strong> then <strong>"Add to Home Screen"</strong>
             </div>
           )}
         </div>
