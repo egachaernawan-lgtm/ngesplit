@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 
 export default function ResultPage() {
   const router = useRouter();
-  const { bill, reset } = useBillStore();
+  const { bill, reset, save } = useBillStore();
   const [results, setResults] = useState<PersonResult[]>([]);
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -21,7 +21,9 @@ export default function ResultPage() {
   useEffect(() => {
     if (!bill) { router.replace("/"); return; }
     setResults(calculateResults(bill));
-  }, [bill, router]);
+    // Safety net: ensure bill is saved before user shares
+    save().catch(console.error);
+  }, [bill, router, save]);
 
   if (!bill) return null;
 

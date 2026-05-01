@@ -126,7 +126,11 @@ export const useBillStore = create<BillStore>()(
 
       save: async () => {
         const { bill } = get();
-        if (bill) await saveBill(bill);
+        if (!bill) return;
+        const result = await saveBill(bill);
+        if (!result.ok) {
+          console.error("[store.save] Failed:", result.error);
+        }
       },
 
       reset: () => set({ bill: null }),
