@@ -50,9 +50,14 @@ export default function ReviewPage() {
 
   const handleNext = async () => {
     setSaving(true);
-    await save();
-    setSaving(false);
-    router.push("/members");
+    try {
+      await save();
+    } catch (e) {
+      console.error("Failed to save bill:", e);
+    } finally {
+      setSaving(false);
+      router.push("/members");
+    }
   };
 
   return (
