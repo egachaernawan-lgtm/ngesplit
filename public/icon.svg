@@ -1,0 +1,16 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="512" height="512" rx="112" fill="#0A0A0A"/>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <!-- Outer black ring -->
+  <circle cx="220" cy="220" r="120" fill="none" stroke="white" stroke-width="40"/>
+  <circle cx="220" cy="220" r="80" fill="white"/>
+  <!-- Lime circle offset -->
+  <circle cx="292" cy="292" r="120" fill="none" stroke="#D0DF73" stroke-width="40"/>
+  <circle cx="292" cy="292" r="80" fill="#E8FF5A"/>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="512" y2="512">
+      <stop offset="0%" stop-color="#111111"/>
+      <stop offset="100%" stop-color="#0A0A0A"/>
+    </linearGradient>
+  </defs>
+</svg>
