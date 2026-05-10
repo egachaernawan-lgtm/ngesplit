@@ -20,16 +20,34 @@ Return exactly this structure:
   "total": 0
 }
 
-Rules:
-- All monetary values are integers in IDR (Indonesian Rupiah), no decimals
-- quantity is an integer, defaults to 1
-- unitPrice = price per single item; total = unitPrice × quantity
-- servicePercent and taxPercent are numbers like 10 for 10% (not 0.1)
-- serviceAmount and taxAmount are the actual rupiah charge amounts
-- discount is a positive integer representing the discount amount
-- total is the final grand total amount to pay
-- items array contains ONLY food/drink menu items — do NOT include tax, service, or discount as items
-- restaurantName is the business name at the top of the receipt`;
+STRICT RULES — follow exactly:
+
+1. "restaurantName": The business/restaurant name at the very top of the receipt. If unclear, use the most prominent text.
+
+2. "items": ONLY actual food and beverage menu items that were ordered.
+   NEVER include these as items (put them in their own fields instead):
+   - Sub Total / Subtotal / Jumlah
+   - Grand Total / Total Bayar / Total Tagihan / Total
+   - Service Charge / Service / Pelayanan / Servis
+   - Tax / PPN / Pajak / VAT / PB1
+   - Discount / Diskon / Promo / Potongan
+   - Change / Kembalian / Cash / Tunai
+   - Any line that is a summary, charge, or payment line
+
+3. "subtotal": Sum of all item totals before service/tax/discount.
+
+4. "servicePercent": Service charge percentage (e.g. 5 for 5%). Use 0 if not shown.
+   "serviceAmount": Actual service charge amount in Rupiah from the receipt. Use 0 if none.
+
+5. "taxPercent": Tax/PPN percentage (e.g. 11 for 11%). Use 0 if not shown.
+   "taxAmount": Actual tax amount in Rupiah from the receipt. Use 0 if none.
+
+6. "discount": Discount/promo amount in Rupiah (positive integer). Use 0 if none.
+
+7. "total": The final grand total amount the customer must pay.
+
+8. All monetary values are integers in IDR (no decimals, no currency symbols).
+   unitPrice = price per 1 unit; total = unitPrice × quantity.`;
 
 // ── Route handler ─────────────────────────────────────────────────────────────
 

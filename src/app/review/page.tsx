@@ -5,6 +5,12 @@ import { Plus, Trash2, ChevronDown, ChevronUp } from "lucide-react";
 import { nanoid } from "nanoid";
 import { useBillStore } from "@/lib/store";
 import { formatIDR, parseIDR } from "@/lib/currency";
+
+/** Format number with thousand-separator dots for input display (e.g. 30000 → "30.000") */
+function fmtAmt(n: number): string {
+  if (!n) return "";
+  return n.toLocaleString("id-ID");
+}
 import type { MenuItem } from "@/types/bill";
 import StepHeader from "@/components/ui/StepHeader";
 import Button from "@/components/ui/Button";
@@ -119,10 +125,10 @@ export default function ReviewPage() {
                 <div className="flex-1">
                   <p className="text-[10px] text-[#555] mb-1">Harga</p>
                   <input
-                    type="number"
+                    type="text"
                     inputMode="numeric"
                     className="w-full bg-[#111] border border-[#2A2A2A] rounded-[8px] px-2 py-2 text-xs text-[#F5F5F5] focus:outline-none focus:border-[#E8FF5A]/50 tabular-nums"
-                    value={item.price || ""}
+                    value={fmtAmt(item.price)}
                     placeholder="0"
                     onChange={(e) => updateItem(item.id, "price", e.target.value)}
                   />
@@ -142,10 +148,10 @@ export default function ReviewPage() {
                 <div className="flex-1">
                   <p className="text-[10px] text-[#555] mb-1">Total</p>
                   <input
-                    type="number"
+                    type="text"
                     inputMode="numeric"
                     className="w-full bg-[#111] border border-[#2A2A2A] rounded-[8px] px-2 py-2 text-xs text-[#E8FF5A] focus:outline-none focus:border-[#E8FF5A]/50 tabular-nums font-medium"
-                    value={item.total || ""}
+                    value={fmtAmt(item.total)}
                     placeholder="0"
                     onChange={(e) => updateItem(item.id, "total", e.target.value)}
                   />
@@ -168,34 +174,49 @@ export default function ReviewPage() {
           {showCharges && (
             <Card className="flex flex-col gap-3">
               <div className="grid grid-cols-2 gap-3">
-                <Input
-                  label="Service (%)"
-                  type="number"
-                  inputMode="decimal"
-                  suffix="%"
-                  value={bill.servicePercent || ""}
-                  placeholder="0"
-                  onChange={(e) => updateCharges({ servicePercent: parseFloat(e.target.value) || 0 })}
-                />
-                <Input
-                  label="Tax / PPN (%)"
-                  type="number"
-                  inputMode="decimal"
-                  suffix="%"
-                  value={bill.taxPercent || ""}
-                  placeholder="0"
-                  onChange={(e) => updateCharges({ taxPercent: parseFloat(e.target.value) || 0 })}
-                />
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] text-[#888] font-medium">Service (Rp)</label>
+                  <div className="flex items-center bg-[#111] border border-[#2A2A2A] rounded-[8px] px-2">
+                    <span className="text-[10px] text-[#555] mr-1">Rp</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      className="flex-1 bg-transparent py-2 text-xs text-[#F5F5F5] focus:outline-none tabular-nums"
+                      value={fmtAmt(bill.serviceAmount)}
+                      placeholder="0"
+                      onChange={(e) => updateCharges({ serviceAmount: parseIDR(e.target.value) })}
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] text-[#888] font-medium">Tax / PPN (Rp)</label>
+                  <div className="flex items-center bg-[#111] border border-[#2A2A2A] rounded-[8px] px-2">
+                    <span className="text-[10px] text-[#555] mr-1">Rp</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      className="flex-1 bg-transparent py-2 text-xs text-[#F5F5F5] focus:outline-none tabular-nums"
+                      value={fmtAmt(bill.taxAmount)}
+                      placeholder="0"
+                      onChange={(e) => updateCharges({ taxAmount: parseIDR(e.target.value) })}
+                    />
+                  </div>
+                </div>
               </div>
-              <Input
-                label="Diskon (Rp)"
-                type="number"
-                inputMode="numeric"
-                prefix="Rp"
-                value={bill.discount || ""}
-                placeholder="0"
-                onChange={(e) => updateCharges({ discount: parseIDR(e.target.value) })}
-              />
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] text-[#888] font-medium">Diskon (Rp)</label>
+                <div className="flex items-center bg-[#111] border border-[#2A2A2A] rounded-[8px] px-2">
+                  <span className="text-[10px] text-[#555] mr-1">Rp</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    className="flex-1 bg-transparent py-2 text-xs text-[#F5F5F5] focus:outline-none tabular-nums"
+                    value={fmtAmt(bill.discount)}
+                    placeholder="0"
+                    onChange={(e) => updateCharges({ discount: parseIDR(e.target.value) })}
+                  />
+                </div>
+              </div>
             </Card>
           )}
         </div>
@@ -205,10 +226,10 @@ export default function ReviewPage() {
           <p className="text-xs font-medium text-[#888] uppercase tracking-wider mb-1">Ringkasan</p>
           <SummaryRow label="Sub Total" value={bill.subtotal} />
           {bill.serviceAmount > 0 && (
-            <SummaryRow label={`Service (${bill.servicePercent}%)`} value={bill.serviceAmount} />
+            <SummaryRow label="Service" value={bill.serviceAmount} />
           )}
           {bill.taxAmount > 0 && (
-            <SummaryRow label={`Tax (${bill.taxPercent}%)`} value={bill.taxAmount} />
+            <SummaryRow label="Tax / PPN" value={bill.taxAmount} />
           )}
           {bill.discount > 0 && (
             <SummaryRow label="Diskon" value={-bill.discount} className="text-green-400" />

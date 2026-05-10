@@ -1,11 +1,11 @@
 import type { Bill, PersonResult } from "@/types/bill";
 
 export function computeBillTotals(bill: Pick<Bill,
-  "items" | "servicePercent" | "taxPercent" | "discount" | "ocrTotal"
+  "items" | "serviceAmount" | "taxAmount" | "discount" | "ocrTotal"
 >): Pick<Bill, "subtotal" | "serviceAmount" | "taxAmount" | "etc" | "total"> {
   const subtotal = bill.items.reduce((sum, item) => sum + item.total, 0);
-  const serviceAmount = Math.round(subtotal * (bill.servicePercent / 100));
-  const taxAmount = Math.round((subtotal + serviceAmount) * (bill.taxPercent / 100));
+  const serviceAmount = Math.round(bill.serviceAmount);
+  const taxAmount = Math.round(bill.taxAmount);
   const discount = Math.round(bill.discount);
   const computed = subtotal + serviceAmount + taxAmount - discount;
   const etc = bill.ocrTotal > 0 ? bill.ocrTotal - computed : 0;
