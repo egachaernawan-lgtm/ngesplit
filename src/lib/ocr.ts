@@ -12,31 +12,53 @@ export interface OcrResult {
   total: number;
 }
 
-// Patterns for Indonesian receipts
+// ── Regex patterns ────────────────────────────────────────────────────────────
+
 const PRICE_RE = /(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{0,2})?)/g;
-const TOTAL_KEYWORDS = /\b(total|grand\s*total|jumlah|tagihan)\b/i;
-const SUBTOTAL_KEYWORDS = /\b(sub\s*total|subtotal|jumlah\s*menu)\b/i;
-const SERVICE_KEYWORDS = /\b(service\s*charge|service|pelayanan)\b/i;
-const TAX_KEYWORDS = /\b(tax|ppn|pajak|pb1)\b/i;
-const DISCOUNT_KEYWORDS = /\b(disc(?:ount)?|diskon|potongan)\b/i;
+
+// Items total / sub total — checked BEFORE grand total to avoid mis-classification
+const SUBTOTAL_RE =
+  /\b(sub\s*total|subtotal|items?\s*total|item\s*total|total\s*item|jumlah\s*(?:item|menu|makanan|order))\b/i;
+
+// Grand total — standalone "total" or explicit grand-total labels
+const GRAND_TOTAL_RE =
+  /\b(grand\s*total|total\s*bayar|total\s*tagihan|total\s*akhir|total\s*pembayaran|total\s*keseluruhan|total\s*bill)\b|\btotal\s*:?\s*\d|\btotal\b(?!\s*item)/i;
+
+// Service charge — handles "Service", "& Service", "Service Charge", "Srv", etc.
+const SERVICE_RE =
+  /\b(service\s*charge|service|pelayanan|servis|gratuity|svc|srv)\b|(?:^|[\s&+])service\b/i;
+
+// Tax — handles "Tax", "PPN", "PB1", "PB.1", "Pajak", "VAT"
+const TAX_RE =
+  /\b(tax|ppn|pb\.?1|pajak(?:\s*restoran)?|vat|duty)\b/i;
+
+// Discount / promo
+const DISCOUNT_RE =
+  /\b(disc(?:ount)?|diskon|promo(?:si)?|potongan|voucher|cashback|reduc\w*)\b/i;
+
+// Line that STARTS with a percentage: "10% Service Name  12,000"
+// Common in Indonesian receipts where no standard keyword is used
+const STARTS_WITH_PCT_RE = /^(\d+(?:[.,]\d+)?)\s*%/;
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function cleanPrice(raw: string): number {
-  // Handle both 10.000 and 10,000 and 10000 formats
-  const cleaned = raw.replace(/\./g, "").replace(/,/g, "");
-  return parseInt(cleaned, 10) || 0;
+  // Handles both 1.053.200 and 1,053,200 Indonesian formats
+  return parseInt(raw.replace(/[.,]/g, ""), 10) || 0;
 }
 
 function extractLastPrice(line: string): number {
   const matches = Array.from(line.matchAll(PRICE_RE));
-  if (matches.length === 0) return 0;
+  if (!matches.length) return 0;
   return cleanPrice(matches[matches.length - 1][1]);
 }
 
 function extractPercent(line: string): number {
-  const match = line.match(/(\d+(?:[.,]\d+)?)\s*%/);
-  if (match) return parseFloat(match[1].replace(",", "."));
-  return 0;
+  const m = line.match(/(\d+(?:[.,]\d+)?)\s*%/);
+  return m ? parseFloat(m[1].replace(",", ".")) : 0;
 }
+
+// ── Main parser ───────────────────────────────────────────────────────────────
 
 export function parseOcrText(raw: string): OcrResult {
   const lines = raw
@@ -56,30 +78,34 @@ export function parseOcrText(raw: string): OcrResult {
     total: 0,
   };
 
-  // First non-empty line is likely the restaurant name
-  if (lines.length > 0) {
-    result.restaurantName = lines[0];
-  }
+  if (lines.length > 0) result.restaurantName = lines[0];
 
   let idCounter = 0;
   const nextId = () => `item-${++idCounter}`;
 
+  // Unclassified % lines — e.g. "10% BEAUTIFUL BALI 63,192"
+  // We'll assign these to service/tax as a fallback at the end
+  const unclassifiedPct: { pct: number; amount: number }[] = [];
+
   for (const line of lines) {
     const lower = line.toLowerCase();
 
-    if (TOTAL_KEYWORDS.test(lower) && !SUBTOTAL_KEYWORDS.test(lower)) {
-      const price = extractLastPrice(line);
-      if (price > 0) result.total = price;
-      continue;
-    }
-
-    if (SUBTOTAL_KEYWORDS.test(lower)) {
+    // ── Sub total / items total (must be before grand total) ──────────────────
+    if (SUBTOTAL_RE.test(lower)) {
       const price = extractLastPrice(line);
       if (price > 0) result.subtotal = price;
       continue;
     }
 
-    if (SERVICE_KEYWORDS.test(lower)) {
+    // ── Grand total ───────────────────────────────────────────────────────────
+    if (GRAND_TOTAL_RE.test(lower)) {
+      const price = extractLastPrice(line);
+      if (price > 0) result.total = price;
+      continue;
+    }
+
+    // ── Service charge ────────────────────────────────────────────────────────
+    if (SERVICE_RE.test(lower)) {
       const pct = extractPercent(line);
       const price = extractLastPrice(line);
       if (pct > 0) result.servicePercent = pct;
@@ -87,7 +113,8 @@ export function parseOcrText(raw: string): OcrResult {
       continue;
     }
 
-    if (TAX_KEYWORDS.test(lower)) {
+    // ── Tax ───────────────────────────────────────────────────────────────────
+    if (TAX_RE.test(lower)) {
       const pct = extractPercent(line);
       const price = extractLastPrice(line);
       if (pct > 0) result.taxPercent = pct;
@@ -95,19 +122,30 @@ export function parseOcrText(raw: string): OcrResult {
       continue;
     }
 
-    if (DISCOUNT_KEYWORDS.test(lower)) {
+    // ── Discount ──────────────────────────────────────────────────────────────
+    if (DISCOUNT_RE.test(lower)) {
       const price = extractLastPrice(line);
       if (price > 0) result.discount = price;
       continue;
     }
 
-    // Attempt to parse as a menu item line: "Item Name  qty  price"
+    // ── Lines starting with "X%" — e.g. "10% BEAUTIFUL BALI 63,192" ──────────
+    // These are charges with a non-standard label; collect for fallback assignment
+    const pctLineMatch = line.match(STARTS_WITH_PCT_RE);
+    if (pctLineMatch) {
+      const pct = parseFloat(pctLineMatch[1].replace(",", "."));
+      const amount = extractLastPrice(line);
+      if (pct > 0 && amount > 0) {
+        unclassifiedPct.push({ pct, amount });
+      }
+      continue; // never treat as a menu item
+    }
+
+    // ── Menu item ─────────────────────────────────────────────────────────────
     const priceMatches = Array.from(line.matchAll(PRICE_RE));
     if (priceMatches.length >= 1) {
-      // Heuristic: if there's a price at the end and the line isn't just a number
       const lastPrice = cleanPrice(priceMatches[priceMatches.length - 1][1]);
       if (lastPrice >= 1000) {
-        // Strip the prices from the name
         const name = line
           .replace(PRICE_RE, "")
           .replace(/[xX×]\s*\d+/g, "")
@@ -117,24 +155,27 @@ export function parseOcrText(raw: string): OcrResult {
         if (name.length >= 2) {
           let quantity = 1;
           let price = lastPrice;
-
-          // Try to detect qty × price pattern
           const qtyMatch = line.match(/(\d+)\s*[xX×]\s*(\d[\d.,]*)/);
           if (qtyMatch) {
             quantity = parseInt(qtyMatch[1], 10);
             price = cleanPrice(qtyMatch[2]);
           }
-
-          result.items.push({
-            id: nextId(),
-            name,
-            price,
-            quantity,
-            total: lastPrice,
-          });
+          result.items.push({ id: nextId(), name, price, quantity, total: lastPrice });
         }
       }
     }
+  }
+
+  // ── Fallback: assign unclassified % lines to service then tax ────────────────
+  // Indonesian receipts often write "10% Service Name 12,000" without a keyword.
+  // First unclassified % line → service, second → tax (most common receipt order).
+  if (unclassifiedPct.length >= 1 && result.servicePercent === 0 && result.serviceAmount === 0) {
+    result.servicePercent = unclassifiedPct[0].pct;
+    result.serviceAmount = unclassifiedPct[0].amount;
+  }
+  if (unclassifiedPct.length >= 2 && result.taxPercent === 0 && result.taxAmount === 0) {
+    result.taxPercent = unclassifiedPct[1].pct;
+    result.taxAmount = unclassifiedPct[1].amount;
   }
 
   return result;
