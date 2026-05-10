@@ -6,6 +6,33 @@ import { createWorker } from "tesseract.js";
 import { useBillStore } from "@/lib/store";
 import { parseOcrText } from "@/lib/ocr";
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** Resize image to max 1920px and convert to JPEG base64 (keeps size under Vercel's 4.5MB limit) */
+async function imageToBase64(file: File, maxPx = 1920): Promise<{ base64: string; mimeType: string }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxPx || height > maxPx) {
+        const ratio = Math.min(maxPx / width, maxPx / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext("2d")!.drawImage(img, 0, 0, width, height);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+      URL.revokeObjectURL(url);
+      resolve({ base64: dataUrl.split(",")[1], mimeType: "image/jpeg" });
+    };
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
@@ -18,6 +45,7 @@ export default function HomePage() {
   const { initBill } = useBillStore();
   const [status, setStatus] = useState<"idle" | "processing">("idle");
   const [progress, setProgress] = useState(0);
+  const [ocrEngine, setOcrEngine] = useState<"gemini" | "tesseract" | null>(null);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isIOS, setIsIOS] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
@@ -61,7 +89,43 @@ export default function HomePage() {
   const processImage = useCallback(async (file: File) => {
     setStatus("processing");
     setProgress(0);
+    setOcrEngine("gemini");
+
     try {
+      // ── 1. Try Gemini AI ───────────────────────────────────────────────────
+      try {
+        const { base64, mimeType } = await imageToBase64(file);
+        const res = await fetch("/api/ocr", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imageBase64: base64, mimeType }),
+        });
+        const data = await res.json();
+
+        if (data.ok && data.result) {
+          initBill({
+            restaurantName: data.result.restaurantName,
+            items: data.result.items,
+            servicePercent: data.result.servicePercent,
+            serviceAmount: data.result.serviceAmount,
+            taxPercent: data.result.taxPercent,
+            taxAmount: data.result.taxAmount,
+            discount: data.result.discount,
+            ocrTotal: data.result.total,
+          });
+          router.push("/review");
+          return;
+        }
+        // data.fallback === true → fall through to Tesseract
+        if (data.reason) console.warn("[ocr] Gemini fallback reason:", data.reason);
+      } catch (e) {
+        // Network error or JSON parse issue → fall through
+        console.warn("[ocr] Gemini request failed:", e);
+      }
+
+      // ── 2. Fallback: Tesseract.js ──────────────────────────────────────────
+      setOcrEngine("tesseract");
+      setProgress(0);
       const worker = await createWorker("eng+ind", 1, {
         logger: (m) => {
           if (m.status === "recognizing text") {
@@ -82,9 +146,10 @@ export default function HomePage() {
         discount: parsed.discount,
         ocrTotal: parsed.total,
       });
-      router.push(`/review`);
+      router.push("/review");
     } catch {
       setStatus("idle");
+      setOcrEngine(null);
     }
   }, [initBill, router]);
 
@@ -222,16 +287,31 @@ export default function HomePage() {
       {status === "processing" && (
         <div className="fixed inset-0 bg-[#0A0A0A]/90 flex flex-col items-center justify-center z-50 gap-4">
           <Loader2 size={32} className="text-[#E8FF5A] animate-spin" />
-          <div className="text-center">
-            <p className="text-[#F5F5F5] font-medium mb-1">Membaca struk...</p>
-            <p className="text-[#888] text-sm">{progress}%</p>
-          </div>
+          {ocrEngine === "gemini" ? (
+            <div className="text-center">
+              <p className="text-[#F5F5F5] font-medium mb-1">AI sedang membaca struk...</p>
+              <p className="text-[#888] text-sm">Biasanya selesai dalam 3–5 detik</p>
+            </div>
+          ) : (
+            <div className="text-center">
+              <p className="text-[#F5F5F5] font-medium mb-1">Membaca struk...</p>
+              <p className="text-[#888] text-sm">{progress}%</p>
+            </div>
+          )}
           <div className="w-48 h-1.5 bg-[#1A1A1A] rounded-full overflow-hidden">
-            <div
-              className="h-full bg-[#E8FF5A] rounded-full transition-all duration-300"
-              style={{ width: `${progress}%` }}
-            />
+            {ocrEngine === "gemini" ? (
+              // Indeterminate animation for Gemini
+              <div className="h-full bg-[#E8FF5A] rounded-full animate-pulse" style={{ width: "60%" }} />
+            ) : (
+              <div
+                className="h-full bg-[#E8FF5A] rounded-full transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              />
+            )}
           </div>
+          {ocrEngine === "tesseract" && (
+            <p className="text-[#555] text-xs">Beralih ke mode backup</p>
+          )}
         </div>
       )}
     </div>

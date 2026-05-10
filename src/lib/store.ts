@@ -10,7 +10,7 @@ interface BillStore {
   initBill: (partial: Partial<Bill>) => void;
   setBill: (bill: Bill) => void;
   updateItems: (items: MenuItem[]) => void;
-  updateCharges: (charges: Partial<Pick<Bill, "servicePercent" | "taxPercent" | "discount">>) => void;
+  updateCharges: (charges: Partial<Pick<Bill, "servicePercent" | "serviceAmount" | "taxPercent" | "taxAmount" | "discount">>) => void;
   updateRestaurantName: (name: string) => void;
   addMember: (name: string) => void;
   removeMember: (id: string) => void;
