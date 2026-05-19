@@ -51,6 +51,33 @@ STRICT RULES — follow exactly:
 
 // ── Route handler ─────────────────────────────────────────────────────────────
 
+const GEMINI_URL = (key: string) =>
+  `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`;
+
+const RETRY_DELAY_MS = 3000;
+const MAX_ATTEMPTS = 2;
+
+async function callGemini(apiKey: string, imageBase64: string, mimeType: string): Promise<Response> {
+  return fetch(GEMINI_URL(apiKey), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [
+        {
+          parts: [
+            { text: PROMPT },
+            { inlineData: { mimeType, data: imageBase64 } },
+          ],
+        },
+      ],
+      generationConfig: {
+        temperature: 0,
+        responseMimeType: "application/json",
+      },
+    }),
+  });
+}
+
 export async function POST(req: NextRequest) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -65,39 +92,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ fallback: true, reason: "bad_request" });
     }
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+    let response: Response | null = null;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      response = await callGemini(apiKey, imageBase64, mimeType);
+      if (response.status !== 429) break;
+      if (attempt < MAX_ATTEMPTS) {
+        console.warn(`[ocr/gemini] Rate limit hit (attempt ${attempt}), retrying in ${RETRY_DELAY_MS}ms…`);
+        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+      }
+    }
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: PROMPT },
-              { inlineData: { mimeType, data: imageBase64 } },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0,
-          responseMimeType: "application/json",
-        },
-      }),
-    });
-
-    if (response.status === 429) {
-      console.warn("[ocr/gemini] Rate limit hit — falling back to Tesseract");
+    if (response!.status === 429) {
+      console.warn("[ocr/gemini] Rate limit persists after retries — falling back to Tesseract");
       return NextResponse.json({ fallback: true, reason: "rate_limit" });
     }
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error(`[ocr/gemini] API error ${response.status}:`, errText);
-      return NextResponse.json({ fallback: true, reason: "api_error", status: response.status, detail: errText });
+    if (!response!.ok) {
+      const errText = await response!.text();
+      console.error(`[ocr/gemini] API error ${response!.status}:`, errText);
+      return NextResponse.json({ fallback: true, reason: "api_error", status: response!.status, detail: errText });
     }
 
-    const data = await response.json();
+    const data = await response!.json();
     const rawText: string = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
 
     if (!rawText) {

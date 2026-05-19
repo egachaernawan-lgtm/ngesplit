@@ -2,7 +2,6 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Camera, Upload, FileText, Loader2 } from "lucide-react";
-import { createWorker } from "tesseract.js";
 import { useBillStore } from "@/lib/store";
 import { parseOcrText } from "@/lib/ocr";
 
@@ -44,9 +43,10 @@ export default function HomePage() {
   const cameraRef = useRef<HTMLInputElement>(null);
   const { initBill } = useBillStore();
   const [status, setStatus] = useState<"idle" | "processing">("idle");
-  const [progress, setProgress] = useState(0);
-  const [ocrEngine, setOcrEngine] = useState<"gemini" | "tesseract" | null>(null);
+  const [ocrEngine, setOcrEngine] = useState<"gemini" | "ocr-space" | null>(null);
   const [geminiError, setGeminiError] = useState<string | null>(null);
+  const [ocrFailed, setOcrFailed] = useState(false);
+  const [ocrSpaceError, setOcrSpaceError] = useState<string | null>(null);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isIOS, setIsIOS] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
@@ -89,9 +89,10 @@ export default function HomePage() {
 
   const processImage = useCallback(async (file: File) => {
     setStatus("processing");
-    setProgress(0);
     setOcrEngine("gemini");
     setGeminiError(null);
+    setOcrFailed(false);
+    setOcrSpaceError(null);
 
     try {
       // ── 1. Try Gemini AI ───────────────────────────────────────────────────
@@ -130,19 +131,26 @@ export default function HomePage() {
         console.warn("[ocr] Gemini request failed:", e);
       }
 
-      // ── 2. Fallback: Tesseract.js ──────────────────────────────────────────
-      setOcrEngine("tesseract");
-      setProgress(0);
-      const worker = await createWorker("eng+ind", 1, {
-        logger: (m) => {
-          if (m.status === "recognizing text") {
-            setProgress(Math.round(m.progress * 100));
-          }
-        },
+      // ── 2. Fallback: OCR Space ─────────────────────────────────────────────
+      setOcrEngine("ocr-space");
+      const { base64: b64, mimeType: mt } = await imageToBase64(file, 1024);
+      const ocrRes = await fetch("/api/ocr-space", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64: b64, mimeType: mt }),
       });
-      const { data } = await worker.recognize(file);
-      await worker.terminate();
-      const parsed = parseOcrText(data.text);
+      const ocrData = await ocrRes.json();
+      if (!ocrData.ok) {
+        const detail = ocrData.detail ? ` (${ocrData.detail.slice(0, 120)})` : "";
+        const msg = `OCR Space gagal [${ocrData.reason ?? "unknown"}]${detail}`;
+        console.error("[ocr]", msg);
+        setOcrSpaceError(msg);
+        setStatus("idle");
+        setOcrEngine(null);
+        setOcrFailed(true);
+        return;
+      }
+      const parsed = parseOcrText(ocrData.text);
       initBill({
         restaurantName: parsed.restaurantName,
         items: parsed.items,
@@ -157,6 +165,7 @@ export default function HomePage() {
     } catch {
       setStatus("idle");
       setOcrEngine(null);
+      setOcrFailed(true);
     }
   }, [initBill, router]);
 
@@ -241,6 +250,17 @@ export default function HomePage() {
         </button>
       </div>
 
+      {/* OCR failure banner */}
+      {ocrFailed && (
+        <div className="mt-4 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-center">
+          <p className="text-red-400 text-sm font-medium">Gagal membaca struk</p>
+          <p className="text-red-400/70 text-xs mt-0.5">Coba lagi atau gunakan Input Manual</p>
+          {ocrSpaceError && (
+            <p className="text-red-400/50 text-xs mt-1 break-all">{ocrSpaceError}</p>
+          )}
+        </div>
+      )}
+
       {/* Add to Home Screen */}
       {showInstallButton && (
         <div className="mt-10 flex flex-col items-center gap-3">
@@ -294,29 +314,18 @@ export default function HomePage() {
       {status === "processing" && (
         <div className="fixed inset-0 bg-[#0A0A0A]/90 flex flex-col items-center justify-center z-50 gap-4">
           <Loader2 size={32} className="text-[#E8FF5A] animate-spin" />
-          {ocrEngine === "gemini" ? (
-            <div className="text-center">
-              <p className="text-[#F5F5F5] font-medium mb-1">AI sedang membaca struk...</p>
-              <p className="text-[#888] text-sm">Biasanya selesai dalam 3–5 detik</p>
-            </div>
-          ) : (
-            <div className="text-center">
-              <p className="text-[#F5F5F5] font-medium mb-1">Membaca struk...</p>
-              <p className="text-[#888] text-sm">{progress}%</p>
-            </div>
-          )}
-          <div className="w-48 h-1.5 bg-[#1A1A1A] rounded-full overflow-hidden">
-            {ocrEngine === "gemini" ? (
-              // Indeterminate animation for Gemini
-              <div className="h-full bg-[#E8FF5A] rounded-full animate-pulse" style={{ width: "60%" }} />
-            ) : (
-              <div
-                className="h-full bg-[#E8FF5A] rounded-full transition-all duration-300"
-                style={{ width: `${progress}%` }}
-              />
-            )}
+          <div className="text-center">
+            <p className="text-[#F5F5F5] font-medium mb-1">
+              {ocrEngine === "gemini" ? "AI sedang membaca struk..." : "Membaca struk..."}
+            </p>
+            <p className="text-[#888] text-sm">
+              {ocrEngine === "gemini" ? "Biasanya selesai dalam 3–5 detik" : "Mohon tunggu sebentar"}
+            </p>
           </div>
-          {ocrEngine === "tesseract" && (
+          <div className="w-48 h-1.5 bg-[#1A1A1A] rounded-full overflow-hidden">
+            <div className="h-full bg-[#E8FF5A] rounded-full animate-pulse" style={{ width: "60%" }} />
+          </div>
+          {ocrEngine === "ocr-space" && (
             <p className="text-[#555] text-xs">Beralih ke mode backup</p>
           )}
           {geminiError && (
