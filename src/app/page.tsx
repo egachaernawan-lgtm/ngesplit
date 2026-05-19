@@ -43,10 +43,10 @@ export default function HomePage() {
   const cameraRef = useRef<HTMLInputElement>(null);
   const { initBill } = useBillStore();
   const [status, setStatus] = useState<"idle" | "processing">("idle");
-  const [ocrEngine, setOcrEngine] = useState<"gemini" | "ocr-space" | null>(null);
+  const [ocrEngine, setOcrEngine] = useState<"gemini" | "azure" | null>(null);
   const [geminiError, setGeminiError] = useState<string | null>(null);
   const [ocrFailed, setOcrFailed] = useState(false);
-  const [ocrSpaceError, setOcrSpaceError] = useState<string | null>(null);
+  const [azureError, setAzureError] = useState<string | null>(null);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isIOS, setIsIOS] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
@@ -92,7 +92,7 @@ export default function HomePage() {
     setOcrEngine("gemini");
     setGeminiError(null);
     setOcrFailed(false);
-    setOcrSpaceError(null);
+    setAzureError(null);
 
     try {
       // ── 1. Try Gemini AI ───────────────────────────────────────────────────
@@ -131,20 +131,20 @@ export default function HomePage() {
         console.warn("[ocr] Gemini request failed:", e);
       }
 
-      // ── 2. Fallback: OCR Space ─────────────────────────────────────────────
-      setOcrEngine("ocr-space");
-      const { base64: b64, mimeType: mt } = await imageToBase64(file, 1024);
-      const ocrRes = await fetch("/api/ocr-space", {
+      // ── 2. Fallback: Azure Computer Vision ────────────────────────────────
+      setOcrEngine("azure");
+      const { base64: b64 } = await imageToBase64(file);
+      const ocrRes = await fetch("/api/ocr-azure", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageBase64: b64, mimeType: mt }),
+        body: JSON.stringify({ imageBase64: b64 }),
       });
       const ocrData = await ocrRes.json();
       if (!ocrData.ok) {
         const detail = ocrData.detail ? ` (${ocrData.detail.slice(0, 120)})` : "";
-        const msg = `OCR Space gagal [${ocrData.reason ?? "unknown"}]${detail}`;
+        const msg = `Azure gagal [${ocrData.reason ?? "unknown"}]${detail}`;
         console.error("[ocr]", msg);
-        setOcrSpaceError(msg);
+        setAzureError(msg);
         setStatus("idle");
         setOcrEngine(null);
         setOcrFailed(true);
@@ -255,8 +255,8 @@ export default function HomePage() {
         <div className="mt-4 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-center">
           <p className="text-red-400 text-sm font-medium">Gagal membaca struk</p>
           <p className="text-red-400/70 text-xs mt-0.5">Coba lagi atau gunakan Input Manual</p>
-          {ocrSpaceError && (
-            <p className="text-red-400/50 text-xs mt-1 break-all">{ocrSpaceError}</p>
+          {azureError && (
+            <p className="text-red-400/50 text-xs mt-1 break-all">{azureError}</p>
           )}
         </div>
       )}
@@ -325,7 +325,7 @@ export default function HomePage() {
           <div className="w-48 h-1.5 bg-[#1A1A1A] rounded-full overflow-hidden">
             <div className="h-full bg-[#E8FF5A] rounded-full animate-pulse" style={{ width: "60%" }} />
           </div>
-          {ocrEngine === "ocr-space" && (
+          {ocrEngine === "azure" && (
             <p className="text-[#555] text-xs">Beralih ke mode backup</p>
           )}
           {geminiError && (
