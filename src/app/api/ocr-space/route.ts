@@ -28,15 +28,19 @@ export async function POST(req: NextRequest) {
     });
 
     if (!response.ok) {
-      console.error(`[ocr-space] API error ${response.status}`);
-      return NextResponse.json({ fallback: true, reason: "api_error", status: response.status });
+      const errText = await response.text();
+      console.error(`[ocr-space] API error ${response.status}:`, errText);
+      return NextResponse.json({ fallback: true, reason: "api_error", status: response.status, detail: errText });
     }
 
     const data = await response.json();
 
     if (data.IsErroredOnProcessing) {
-      console.error("[ocr-space] Processing error:", data.ErrorMessage);
-      return NextResponse.json({ fallback: true, reason: "processing_error" });
+      const detail = Array.isArray(data.ErrorMessage)
+        ? data.ErrorMessage.join(", ")
+        : String(data.ErrorMessage ?? "unknown");
+      console.error("[ocr-space] Processing error:", detail);
+      return NextResponse.json({ fallback: true, reason: "processing_error", detail });
     }
 
     const text: string = data.ParsedResults?.[0]?.ParsedText ?? "";

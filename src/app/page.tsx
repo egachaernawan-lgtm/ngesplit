@@ -46,6 +46,7 @@ export default function HomePage() {
   const [ocrEngine, setOcrEngine] = useState<"gemini" | "ocr-space" | null>(null);
   const [geminiError, setGeminiError] = useState<string | null>(null);
   const [ocrFailed, setOcrFailed] = useState(false);
+  const [ocrSpaceError, setOcrSpaceError] = useState<string | null>(null);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isIOS, setIsIOS] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
@@ -91,6 +92,7 @@ export default function HomePage() {
     setOcrEngine("gemini");
     setGeminiError(null);
     setOcrFailed(false);
+    setOcrSpaceError(null);
 
     try {
       // ── 1. Try Gemini AI ───────────────────────────────────────────────────
@@ -131,14 +133,23 @@ export default function HomePage() {
 
       // ── 2. Fallback: OCR Space ─────────────────────────────────────────────
       setOcrEngine("ocr-space");
-      const { base64: b64, mimeType: mt } = await imageToBase64(file);
+      const { base64: b64, mimeType: mt } = await imageToBase64(file, 1024);
       const ocrRes = await fetch("/api/ocr-space", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ imageBase64: b64, mimeType: mt }),
       });
       const ocrData = await ocrRes.json();
-      if (!ocrData.ok) throw new Error(ocrData.reason ?? "ocr-space failed");
+      if (!ocrData.ok) {
+        const detail = ocrData.detail ? ` (${ocrData.detail.slice(0, 120)})` : "";
+        const msg = `OCR Space gagal [${ocrData.reason ?? "unknown"}]${detail}`;
+        console.error("[ocr]", msg);
+        setOcrSpaceError(msg);
+        setStatus("idle");
+        setOcrEngine(null);
+        setOcrFailed(true);
+        return;
+      }
       const parsed = parseOcrText(ocrData.text);
       initBill({
         restaurantName: parsed.restaurantName,
@@ -244,6 +255,9 @@ export default function HomePage() {
         <div className="mt-4 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-center">
           <p className="text-red-400 text-sm font-medium">Gagal membaca struk</p>
           <p className="text-red-400/70 text-xs mt-0.5">Coba lagi atau gunakan Input Manual</p>
+          {ocrSpaceError && (
+            <p className="text-red-400/50 text-xs mt-1 break-all">{ocrSpaceError}</p>
+          )}
         </div>
       )}
 
