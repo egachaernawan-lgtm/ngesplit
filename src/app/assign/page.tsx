@@ -162,13 +162,27 @@ export default function AssignPage() {
                         )}
                       </div>
                     </div>
-                    {checked && sharedWith.length > 0 && (
-                      <p className="text-[10px] text-[#888] mt-0.5">
-                        Sharing dengan{" "}
-                        {sharedWith
-                          .map((id) => bill.members.find((m) => m.id === id)?.name)
-                          .join(", ")}
-                      </p>
+                    {assignment && assignment.memberIds.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        {assignment.memberIds.map((id) => {
+                          const m = bill.members.find((m) => m.id === id);
+                          if (!m) return null;
+                          const isActive = id === activeTab;
+                          return (
+                            <span
+                              key={id}
+                              className={cn(
+                                "text-[10px] font-medium px-1.5 py-0.5 rounded-full",
+                                isActive
+                                  ? "bg-[#E8FF5A] text-[#0A0A0A]"
+                                  : "bg-[#2A2A2A] text-[#888]"
+                              )}
+                            >
+                              {m.name.split(" ")[0]}
+                            </span>
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
                 </button>
