@@ -2,7 +2,9 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Camera, Upload, FileText, Loader2 } from "lucide-react";
+import { createWorker } from "tesseract.js";
 import { useBillStore } from "@/lib/store";
+import { parseOcrText } from "@/lib/ocr";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -42,8 +44,8 @@ export default function HomePage() {
   const cameraRef = useRef<HTMLInputElement>(null);
   const { initBill } = useBillStore();
   const [status, setStatus] = useState<"idle" | "processing">("idle");
-  const [ocrEngine, setOcrEngine] = useState<"gemini" | "groq" | null>(null);
-  const [geminiError, setGeminiError] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [ocrEngine, setOcrEngine] = useState<"groq" | "tesseract" | null>(null);
   const [ocrFailed, setOcrFailed] = useState(false);
   const [groqError, setGroqError] = useState<string | null>(null);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
@@ -88,16 +90,16 @@ export default function HomePage() {
 
   const processImage = useCallback(async (file: File) => {
     setStatus("processing");
-    setOcrEngine("gemini");
-    setGeminiError(null);
+    setProgress(0);
+    setOcrEngine("groq");
     setOcrFailed(false);
     setGroqError(null);
 
     try {
-      // ── 1. Try Gemini AI ───────────────────────────────────────────────────
+      // ── 1. Try Groq AI ─────────────────────────────────────────────────────
       try {
         const { base64, mimeType } = await imageToBase64(file);
-        const res = await fetch("/api/ocr", {
+        const res = await fetch("/api/ocr-groq", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ imageBase64: base64, mimeType }),
@@ -118,46 +120,38 @@ export default function HomePage() {
           router.push("/review");
           return;
         }
-        // data.fallback === true → fall through to Tesseract
         if (data.reason) {
-          const detail = data.detail ? ` (${data.status}: ${data.detail.slice(0, 120)})` : "";
-          const msg = `Gemini gagal [${data.reason}]${detail}`;
-          console.warn("[ocr] Gemini fallback:", msg);
-          setGeminiError(msg);
+          const detail = data.detail ? ` (${data.detail.slice(0, 120)})` : "";
+          const msg = `Groq gagal [${data.reason}]${detail}`;
+          console.warn("[ocr] Groq fallback:", msg);
+          setGroqError(msg);
         }
       } catch (e) {
-        // Network error or JSON parse issue → fall through
-        console.warn("[ocr] Gemini request failed:", e);
+        console.warn("[ocr] Groq request failed:", e);
       }
 
-      // ── 2. Fallback: Groq AI ───────────────────────────────────────────────
-      setOcrEngine("groq");
-      const { base64: b64, mimeType: mt } = await imageToBase64(file);
-      const ocrRes = await fetch("/api/ocr-groq", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageBase64: b64, mimeType: mt }),
+      // ── 2. Fallback: Tesseract.js ──────────────────────────────────────────
+      setOcrEngine("tesseract");
+      setProgress(0);
+      const worker = await createWorker("eng+ind", 1, {
+        logger: (m) => {
+          if (m.status === "recognizing text") {
+            setProgress(Math.round(m.progress * 100));
+          }
+        },
       });
-      const ocrData = await ocrRes.json();
-      if (!ocrData.ok) {
-        const detail = ocrData.detail ? ` (${ocrData.detail.slice(0, 120)})` : "";
-        const msg = `Groq gagal [${ocrData.reason ?? "unknown"}]${detail}`;
-        console.error("[ocr]", msg);
-        setGroqError(msg);
-        setStatus("idle");
-        setOcrEngine(null);
-        setOcrFailed(true);
-        return;
-      }
+      const { data } = await worker.recognize(file);
+      await worker.terminate();
+      const parsed = parseOcrText(data.text);
       initBill({
-        restaurantName: ocrData.result.restaurantName,
-        items: ocrData.result.items,
-        servicePercent: ocrData.result.servicePercent,
-        serviceAmount: ocrData.result.serviceAmount,
-        taxPercent: ocrData.result.taxPercent,
-        taxAmount: ocrData.result.taxAmount,
-        discount: ocrData.result.discount,
-        ocrTotal: ocrData.result.total,
+        restaurantName: parsed.restaurantName,
+        items: parsed.items,
+        servicePercent: parsed.servicePercent,
+        serviceAmount: parsed.serviceAmount,
+        taxPercent: parsed.taxPercent,
+        taxAmount: parsed.taxAmount,
+        discount: parsed.discount,
+        ocrTotal: parsed.total,
       });
       router.push("/review");
     } catch {
@@ -314,20 +308,24 @@ export default function HomePage() {
           <Loader2 size={32} className="text-[#E8FF5A] animate-spin" />
           <div className="text-center">
             <p className="text-[#F5F5F5] font-medium mb-1">
-              {ocrEngine === "gemini" ? "AI sedang membaca struk..." : "Membaca struk..."}
+              {ocrEngine === "groq" ? "AI sedang membaca struk..." : "Membaca struk..."}
             </p>
             <p className="text-[#888] text-sm">
-              {ocrEngine === "gemini" ? "Biasanya selesai dalam 3–5 detik" : "Mohon tunggu sebentar"}
+              {ocrEngine === "groq" ? "Biasanya selesai dalam 3–5 detik" : `${progress}%`}
             </p>
           </div>
           <div className="w-48 h-1.5 bg-[#1A1A1A] rounded-full overflow-hidden">
-            <div className="h-full bg-[#E8FF5A] rounded-full animate-pulse" style={{ width: "60%" }} />
+            {ocrEngine === "groq" ? (
+              <div className="h-full bg-[#E8FF5A] rounded-full animate-pulse" style={{ width: "60%" }} />
+            ) : (
+              <div className="h-full bg-[#E8FF5A] rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
+            )}
           </div>
-          {ocrEngine === "groq" && (
+          {ocrEngine === "tesseract" && (
             <p className="text-[#555] text-xs">Beralih ke mode backup</p>
           )}
-          {geminiError && (
-            <p className="text-red-500 text-xs mt-1 break-all">{geminiError}</p>
+          {groqError && (
+            <p className="text-red-500 text-xs mt-1 break-all">{groqError}</p>
           )}
         </div>
       )}
