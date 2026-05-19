@@ -45,6 +45,7 @@ export default function HomePage() {
   const [status, setStatus] = useState<"idle" | "processing">("idle");
   const [ocrEngine, setOcrEngine] = useState<"gemini" | "ocr-space" | null>(null);
   const [geminiError, setGeminiError] = useState<string | null>(null);
+  const [ocrFailed, setOcrFailed] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isIOS, setIsIOS] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
@@ -89,6 +90,7 @@ export default function HomePage() {
     setStatus("processing");
     setOcrEngine("gemini");
     setGeminiError(null);
+    setOcrFailed(false);
 
     try {
       // ── 1. Try Gemini AI ───────────────────────────────────────────────────
@@ -152,6 +154,7 @@ export default function HomePage() {
     } catch {
       setStatus("idle");
       setOcrEngine(null);
+      setOcrFailed(true);
     }
   }, [initBill, router]);
 
@@ -235,6 +238,14 @@ export default function HomePage() {
           </div>
         </button>
       </div>
+
+      {/* OCR failure banner */}
+      {ocrFailed && (
+        <div className="mt-4 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-center">
+          <p className="text-red-400 text-sm font-medium">Gagal membaca struk</p>
+          <p className="text-red-400/70 text-xs mt-0.5">Coba lagi atau gunakan Input Manual</p>
+        </div>
+      )}
 
       {/* Add to Home Screen */}
       {showInstallButton && (
