@@ -46,6 +46,7 @@ export default function HomePage() {
   const [status, setStatus] = useState<"idle" | "processing">("idle");
   const [progress, setProgress] = useState(0);
   const [ocrEngine, setOcrEngine] = useState<"gemini" | "tesseract" | null>(null);
+  const [geminiError, setGeminiError] = useState<string | null>(null);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isIOS, setIsIOS] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
@@ -90,6 +91,7 @@ export default function HomePage() {
     setStatus("processing");
     setProgress(0);
     setOcrEngine("gemini");
+    setGeminiError(null);
 
     try {
       // ── 1. Try Gemini AI ───────────────────────────────────────────────────
@@ -117,7 +119,12 @@ export default function HomePage() {
           return;
         }
         // data.fallback === true → fall through to Tesseract
-        if (data.reason) console.warn("[ocr] Gemini fallback reason:", data.reason);
+        if (data.reason) {
+          const detail = data.detail ? ` (${data.status}: ${data.detail.slice(0, 120)})` : "";
+          const msg = `Gemini gagal [${data.reason}]${detail}`;
+          console.warn("[ocr] Gemini fallback:", msg);
+          setGeminiError(msg);
+        }
       } catch (e) {
         // Network error or JSON parse issue → fall through
         console.warn("[ocr] Gemini request failed:", e);
@@ -311,6 +318,9 @@ export default function HomePage() {
           </div>
           {ocrEngine === "tesseract" && (
             <p className="text-[#555] text-xs">Beralih ke mode backup</p>
+          )}
+          {geminiError && (
+            <p className="text-red-500 text-xs mt-1 break-all">{geminiError}</p>
           )}
         </div>
       )}

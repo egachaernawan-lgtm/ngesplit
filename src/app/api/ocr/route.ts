@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
     if (!response.ok) {
       const errText = await response.text();
       console.error(`[ocr/gemini] API error ${response.status}:`, errText);
-      return NextResponse.json({ fallback: true, reason: "api_error" });
+      return NextResponse.json({ fallback: true, reason: "api_error", status: response.status, detail: errText });
     }
 
     const data = await response.json();
