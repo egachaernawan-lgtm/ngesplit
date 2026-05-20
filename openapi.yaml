@@ -1,0 +1,285 @@
+openapi: 3.0.3
+info:
+  title: ngesplit API
+  description: |
+    Internal API for ngesplit — a mobile-first bill splitting app for Indonesian restaurants.
+
+    Scan a receipt, extract items with AI OCR, assign items to members, and split the bill fairly.
+  version: 1.0.0
+  contact:
+    name: ngesplit
+    url: https://github.com/egachaernawan-lgtm/ngesplit
+
+servers:
+  - url: https://ngesplit.vercel.app/api
+    description: Production
+
+tags:
+  - name: OCR
+    description: Receipt image processing and text extraction
+
+paths:
+  /ocr-groq:
+    post:
+      tags:
+        - OCR
+      summary: Scan receipt with Groq AI (primary)
+      description: |
+        Sends a receipt image to Groq (Llama 4 Scout Vision) and returns fully structured bill data.
+
+        On failure, returns a fallback response — the client should fall back to Tesseract.js for client-side OCR.
+
+        Retries once after 3 seconds on rate limit (429) before returning fallback.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OcrRequest'
+            example:
+              imageBase64: "/9j/4AAQSkZJRgABAQAA..."
+              mimeType: "image/jpeg"
+      responses:
+        '200':
+          description: |
+            Always returns 200. Check the `ok` or `fallback` field to determine success.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/OcrSuccess'
+                  - $ref: '#/components/schemas/OcrFallback'
+              examples:
+                success:
+                  summary: Groq successfully parsed the receipt
+                  value:
+                    ok: true
+                    result:
+                      restaurantName: "Warung Makan Sederhana"
+                      items:
+                        - id: "abc123"
+                          name: "Ayam Goreng"
+                          price: 25000
+                          quantity: 2
+                          total: 50000
+                        - id: "def456"
+                          name: "Es Teh Manis"
+                          price: 8000
+                          quantity: 3
+                          total: 24000
+                      subtotal: 74000
+                      servicePercent: 5
+                      serviceAmount: 3700
+                      taxPercent: 11
+                      taxAmount: 8140
+                      discount: 0
+                      total: 85840
+                rate_limit:
+                  summary: Groq rate limit hit after retries
+                  value:
+                    fallback: true
+                    reason: rate_limit
+                api_error:
+                  summary: Groq API returned an error
+                  value:
+                    fallback: true
+                    reason: api_error
+                    status: 401
+                    detail: "invalid api key"
+
+  /ocr:
+    post:
+      tags:
+        - OCR
+      summary: Scan receipt with Gemini AI (legacy)
+      description: |
+        Legacy OCR endpoint using Gemini 2.0 Flash. Same request/response shape as `/ocr-groq`.
+
+        No longer used as primary in the app flow but kept for reference.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OcrRequest'
+            example:
+              imageBase64: "/9j/4AAQSkZJRgABAQAA..."
+              mimeType: "image/jpeg"
+      responses:
+        '200':
+          description: |
+            Always returns 200. Check the `ok` or `fallback` field to determine success.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/OcrSuccess'
+                  - $ref: '#/components/schemas/OcrFallback'
+              examples:
+                success:
+                  summary: Gemini successfully parsed the receipt
+                  value:
+                    ok: true
+                    result:
+                      restaurantName: "Warung Makan Sederhana"
+                      items:
+                        - id: "abc123"
+                          name: "Nasi Goreng"
+                          price: 30000
+                          quantity: 1
+                          total: 30000
+                      subtotal: 30000
+                      servicePercent: 0
+                      serviceAmount: 0
+                      taxPercent: 11
+                      taxAmount: 3300
+                      discount: 0
+                      total: 33300
+                no_key:
+                  summary: API key not configured
+                  value:
+                    fallback: true
+                    reason: no_key
+
+components:
+  schemas:
+    OcrRequest:
+      type: object
+      required:
+        - imageBase64
+        - mimeType
+      properties:
+        imageBase64:
+          type: string
+          description: Base64-encoded image without the data URL prefix
+          example: "/9j/4AAQSkZJRgABAQAA..."
+        mimeType:
+          type: string
+          description: MIME type of the image
+          enum:
+            - image/jpeg
+            - image/png
+            - image/webp
+          example: image/jpeg
+
+    OcrSuccess:
+      type: object
+      required:
+        - ok
+        - result
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        result:
+          $ref: '#/components/schemas/OcrResult'
+
+    OcrFallback:
+      type: object
+      required:
+        - fallback
+        - reason
+      properties:
+        fallback:
+          type: boolean
+          enum: [true]
+        reason:
+          type: string
+          description: Why the OCR service failed
+          enum:
+            - no_key
+            - bad_request
+            - rate_limit
+            - api_error
+            - empty_response
+            - exception
+        status:
+          type: integer
+          description: HTTP status code from the upstream API (only on api_error)
+          example: 429
+        detail:
+          type: string
+          description: Raw error message from the upstream API (only on api_error)
+          example: "invalid api key"
+
+    OcrResult:
+      type: object
+      description: Fully structured bill data extracted from the receipt
+      required:
+        - restaurantName
+        - items
+        - subtotal
+        - servicePercent
+        - serviceAmount
+        - taxPercent
+        - taxAmount
+        - discount
+        - total
+      properties:
+        restaurantName:
+          type: string
+          description: Business name at the top of the receipt
+          example: "Warung Makan Sederhana"
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MenuItem'
+        subtotal:
+          type: integer
+          description: Sum of all item totals before charges (IDR)
+          example: 74000
+        servicePercent:
+          type: number
+          description: Service charge percentage (0 if not shown)
+          example: 5
+        serviceAmount:
+          type: integer
+          description: Actual service charge amount in IDR
+          example: 3700
+        taxPercent:
+          type: number
+          description: Tax/PPN percentage (0 if not shown)
+          example: 11
+        taxAmount:
+          type: integer
+          description: Actual tax amount in IDR
+          example: 8140
+        discount:
+          type: integer
+          description: Discount amount in IDR (positive integer)
+          example: 0
+        total:
+          type: integer
+          description: Grand total the customer must pay in IDR
+          example: 85840
+
+    MenuItem:
+      type: object
+      required:
+        - id
+        - name
+        - price
+        - quantity
+        - total
+      properties:
+        id:
+          type: string
+          description: Unique identifier (nanoid 6 chars)
+          example: "abc123"
+        name:
+          type: string
+          description: Menu item name as read from the receipt
+          example: "Ayam Goreng"
+        price:
+          type: integer
+          description: Unit price in IDR
+          example: 25000
+        quantity:
+          type: integer
+          description: Number of units ordered
+          minimum: 1
+          example: 2
+        total:
+          type: integer
+          description: price × quantity in IDR
+          example: 50000
