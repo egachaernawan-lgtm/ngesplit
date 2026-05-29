@@ -58,7 +58,7 @@ function calculateAssigned(bill: Bill): PersonResult[] {
   const memberIds = bill.members.map((m) => m.id);
   distributeProportional(resultMap, memberIds, subtotal, serviceAmount, "serviceShare");
   distributeProportional(resultMap, memberIds, subtotal, taxAmount, "taxShare");
-  distributeProportional(resultMap, memberIds, subtotal, -discount, "discountShare");
+  distributeProportional(resultMap, memberIds, subtotal, discount, "discountShare");
   distributeProportional(resultMap, memberIds, subtotal, etc, "etcShare");
 
   for (const r of results) {
