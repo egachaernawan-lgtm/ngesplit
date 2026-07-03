@@ -11,6 +11,7 @@ interface BillStore {
   setBill: (bill: Bill) => void;
   updateItems: (items: MenuItem[]) => void;
   updateCharges: (charges: Partial<Pick<Bill, "servicePercent" | "serviceAmount" | "taxPercent" | "taxAmount" | "discount">>) => void;
+  updateOcrTotal: (total: number) => void;
   updateRestaurantName: (name: string) => void;
   addMember: (name: string) => void;
   removeMember: (id: string) => void;
@@ -66,6 +67,12 @@ export const useBillStore = create<BillStore>()(
         set((s) => {
           if (!s.bill) return s;
           return { bill: recompute({ ...s.bill, ...charges }) };
+        }),
+
+      updateOcrTotal: (total) =>
+        set((s) => {
+          if (!s.bill) return s;
+          return { bill: recompute({ ...s.bill, ocrTotal: total }) };
         }),
 
       updateRestaurantName: (name) =>
