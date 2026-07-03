@@ -1,7 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, Trash2, ChevronDown, ChevronUp, Pencil, Check } from "lucide-react";
 import { nanoid } from "nanoid";
 import { useBillStore } from "@/lib/store";
 import { formatIDR, parseIDR } from "@/lib/currency";
@@ -19,9 +19,12 @@ import { Card } from "@/components/ui/Card";
 
 export default function ReviewPage() {
   const router = useRouter();
-  const { bill, updateItems, updateCharges, updateRestaurantName, save } = useBillStore();
+  const { bill, updateItems, updateCharges, updateOcrTotal, updateRestaurantName, save } = useBillStore();
   const [showCharges, setShowCharges] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [editingTotal, setEditingTotal] = useState(false);
+  const [totalInput, setTotalInput] = useState("");
+  const totalInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!bill) router.replace("/");
@@ -52,6 +55,18 @@ export default function ReviewPage() {
 
   const removeItem = (id: string) => {
     updateItems(bill.items.filter((i) => i.id !== id));
+  };
+
+  const startEditTotal = () => {
+    setTotalInput(fmtAmt(bill!.total));
+    setEditingTotal(true);
+    setTimeout(() => totalInputRef.current?.select(), 0);
+  };
+
+  const commitTotal = () => {
+    const val = parseIDR(totalInput);
+    if (val > 0) updateOcrTotal(val);
+    setEditingTotal(false);
   };
 
   const handleNext = async () => {
@@ -243,7 +258,34 @@ export default function ReviewPage() {
             />
           )}
           <div className="border-t border-[#2A2A2A] pt-2 mt-1">
-            <SummaryRow label="TOTAL" value={bill.total} bold />
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-[#F5F5F5]">TOTAL</span>
+              {editingTotal ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={totalInputRef}
+                    type="text"
+                    inputMode="numeric"
+                    className="w-36 bg-[#111] border border-[#E8FF5A]/50 rounded-[8px] px-2 py-1 text-sm text-[#E8FF5A] font-semibold tabular-nums focus:outline-none text-right"
+                    value={totalInput}
+                    onChange={(e) => setTotalInput(e.target.value)}
+                    onBlur={commitTotal}
+                    onKeyDown={(e) => { if (e.key === "Enter") commitTotal(); if (e.key === "Escape") setEditingTotal(false); }}
+                  />
+                  <button onClick={commitTotal} className="text-[#E8FF5A]">
+                    <Check size={14} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={startEditTotal}
+                  className="flex items-center gap-1.5 text-sm font-semibold text-[#E8FF5A] tabular-nums"
+                >
+                  {formatIDR(bill.total)}
+                  <Pencil size={11} className="text-[#888]" />
+                </button>
+              )}
+            </div>
           </div>
         </Card>
       </div>
