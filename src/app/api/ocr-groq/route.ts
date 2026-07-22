@@ -47,38 +47,9 @@ STRICT RULES — follow exactly:
 8. All monetary values are integers in IDR (no decimals, no currency symbols).
    unitPrice = price per 1 unit; total = unitPrice × quantity.`;
 
-// Preferred model first; fallback if model doesn't exist or access denied
-const GROQ_MODELS = [
-  "meta-llama/llama-4-scout-17b-16e-instruct",
-  "meta-llama/llama-4-maverick-17b-128e-instruct",
-  "llama-3.2-90b-vision-preview",
-];
+const GROQ_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
 const RETRY_DELAY_MS = 3000;
-
-async function callGroq(apiKey: string, model: string, imageBase64: string, mimeType: string): Promise<Response> {
-  return fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: PROMPT },
-            { type: "image_url", image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
-          ],
-        },
-      ],
-      temperature: 0,
-      max_tokens: 2048,
-      response_format: { type: "json_object" },
-    }),
-  });
-}
+const MAX_ATTEMPTS = 2;
 
 export async function POST(req: NextRequest) {
   const apiKey = process.env.GROQ_API_KEY;
@@ -95,36 +66,38 @@ export async function POST(req: NextRequest) {
     }
 
     let response: Response | null = null;
-
-    // Try each model in order; skip to next on 404 (model not found) or 401 (no access)
-    for (const model of GROQ_MODELS) {
-      response = await callGroq(apiKey, model, imageBase64, mimeType);
-
-      if (response.status === 429) {
-        console.warn(`[ocr-groq] Rate limit on ${model}, retrying after delay…`);
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: GROQ_MODEL,
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: PROMPT },
+                { type: "image_url", image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
+              ],
+            },
+          ],
+          temperature: 0,
+          max_tokens: 2048,
+          response_format: { type: "json_object" },
+        }),
+      });
+      if (response.status !== 429) break;
+      if (attempt < MAX_ATTEMPTS) {
+        console.warn(`[ocr-groq] Rate limit hit (attempt ${attempt}), retrying in ${RETRY_DELAY_MS}ms…`);
         await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
-        response = await callGroq(apiKey, model, imageBase64, mimeType);
       }
-
-      if (response.ok) {
-        console.log(`[ocr-groq] Success with model: ${model}`);
-        break;
-      }
-
-      // 404 or model-access error → try next model
-      if (response.status === 400 || response.status === 404) {
-        const errBody = await response.text();
-        if (errBody.includes("does not exist") || errBody.includes("do not have access")) {
-          console.warn(`[ocr-groq] Model unavailable: ${model}, trying next…`);
-          continue;
-        }
-      }
-
-      break; // Other errors (500, etc.) — stop trying
     }
 
     if (response!.status === 429) {
-      console.warn("[ocr-groq] Rate limit persists");
+      console.warn("[ocr-groq] Rate limit persists after retries");
       return NextResponse.json({ fallback: true, reason: "rate_limit" });
     }
 
