@@ -47,7 +47,7 @@ STRICT RULES — follow exactly:
 8. All monetary values are integers in IDR (no decimals, no currency symbols).
    unitPrice = price per 1 unit; total = unitPrice × quantity.`;
 
-const GROQ_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
+const GROQ_MODEL = "qwen/qwen3.6-27b";
 const RETRY_DELAY_MS = 3000;
 const MAX_ATTEMPTS = 2;
 
