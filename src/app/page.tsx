@@ -96,41 +96,46 @@ export default function HomePage() {
     setGroqError(null);
 
     try {
-      // ── 1. Try Groq AI ─────────────────────────────────────────────────────
+      // ── 1. Try Claude Haiku ────────────────────────────────────────────────
+      const { base64, mimeType } = await imageToBase64(file);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let aiResult: Record<string, any> | null = null;
+
       try {
-        const { base64, mimeType } = await imageToBase64(file);
-        const res = await fetch("/api/ocr-groq", {
+        const res = await fetch("/api/ocr-claude", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ imageBase64: base64, mimeType }),
         });
         const data = await res.json();
-
         if (data.ok && data.result) {
-          initBill({
-            restaurantName: data.result.restaurantName,
-            items: data.result.items,
-            servicePercent: data.result.servicePercent,
-            serviceAmount: data.result.serviceAmount,
-            taxPercent: data.result.taxPercent,
-            taxAmount: data.result.taxAmount,
-            discount: data.result.discount,
-            ocrTotal: data.result.total,
-          });
-          router.push("/review");
-          return;
-        }
-        if (data.reason) {
+          aiResult = data.result;
+        } else {
           const detail = data.detail ? ` (${data.detail.slice(0, 120)})` : "";
-          const msg = `Groq gagal [${data.reason}]${detail}`;
-          console.warn("[ocr] Groq fallback:", msg);
+          const msg = `Claude gagal [${data.reason}]${detail}`;
+          console.warn("[ocr] Claude fallback:", msg);
           setGroqError(msg);
         }
       } catch (e) {
-        console.warn("[ocr] Groq request failed:", e);
+        console.warn("[ocr] Claude request failed:", e);
       }
 
-      // ── 2. Fallback: Tesseract.js ──────────────────────────────────────────
+      if (aiResult) {
+        initBill({
+          restaurantName: aiResult.restaurantName,
+          items: aiResult.items,
+          servicePercent: aiResult.servicePercent,
+          serviceAmount: aiResult.serviceAmount,
+          taxPercent: aiResult.taxPercent,
+          taxAmount: aiResult.taxAmount,
+          discount: aiResult.discount,
+          ocrTotal: aiResult.total,
+        });
+        router.push("/review");
+        return;
+      }
+
+      // ── 3. Fallback: Tesseract.js ──────────────────────────────────────────
       setOcrEngine("tesseract");
       setProgress(0);
       const worker = await createWorker("eng+ind", 1, {
