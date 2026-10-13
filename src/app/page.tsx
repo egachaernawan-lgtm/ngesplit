@@ -177,9 +177,12 @@ export default function HomePage() {
     <div className="flex flex-col min-h-screen px-4 pb-8">
       {/* Header */}
       <div className="pt-16 pb-10 text-center">
-        <div className="inline-flex items-center gap-1.5 bg-[#E8FF5A]/10 border border-[#E8FF5A]/20 rounded-full px-3 py-1 mb-6">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#E8FF5A]" />
-          <span className="text-xs font-medium text-[#E8FF5A]">Split bills, not friendships</span>
+        <div className="w-full bg-amber-500/15 border border-amber-500/30 rounded-xl px-4 py-3 mb-6 flex items-start gap-3 text-left">
+          <span className="text-amber-400 mt-0.5 flex-shrink-0">⚠</span>
+          <div>
+            <p className="text-sm font-bold text-amber-300">Info Pemeliharaan</p>
+            <p className="text-xs text-amber-400/80 mt-0.5 leading-relaxed">Maaf layanan ngesplit terganggu untuk sementara. Silakan cek secara berkala.</p>
+          </div>
         </div>
 
         {/* SVG Logo */}
